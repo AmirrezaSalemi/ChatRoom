@@ -1,7 +1,8 @@
 import socket
 import threading
 import tkinter as tk
-from tkinter import scrolledtext, messagebox
+from tkinter import scrolledtext, messagebox, Toplevel, Label, Entry, Button
+import re
 
 HOST = '127.0.0.1'
 PORT = 15000
@@ -41,25 +42,60 @@ class ClientGUI:
 
         self.chat_area = scrolledtext.ScrolledText(self.root, width=50, height=20, state='disabled')
         self.chat_area.pack(padx=10, pady=10)
-        # Configure tag for red text
         self.chat_area.tag_configure("red", foreground="red")
+        self.chat_area.tag_configure("blue", foreground="blue")
 
         self.message_entry = tk.Entry(self.root, width=40)
         self.message_entry.pack(side=tk.LEFT, padx=5, pady=5)
         self.send_button = tk.Button(self.root, text="Send", command=self.send_message)
         self.send_button.pack(side=tk.LEFT, pady=5)
-        # Add Exit button
         self.exit_button = tk.Button(self.root, text="Exit", command=self.on_closing)
         self.exit_button.pack(side=tk.LEFT, padx=5, pady=5)
+        self.private_button = tk.Button(self.root, text="Private Msg", command=self.open_private_message_window)
+        self.private_button.pack(side=tk.LEFT, padx=5, pady=5)
 
         self.message_entry.bind("<Return>", lambda event: self.send_message())
+
+    def open_private_message_window(self):
+        private_window = Toplevel(self.root)
+        private_window.title("Send Private Message")
+        private_window.geometry("400x200")
+
+        Label(private_window, text="Recipients (comma-separated):").pack(padx=10, pady=5)
+        recipients_entry = Entry(private_window, width=40)
+        recipients_entry.pack(padx=10, pady=5)
+
+        Label(private_window, text="Message:").pack(padx=10, pady=5)
+        message_entry = Entry(private_window, width=40)
+        message_entry.pack(padx=10, pady=5)
+
+        def send_private():
+            recipients = [r.strip() for r in recipients_entry.get().split(",") if r.strip()]
+            message = message_entry.get().strip()
+            if not recipients or not message:
+                messagebox.showerror("Error", "Please enter recipients and a message")
+                return
+            recipient_list = ",".join(recipients)
+            message_len = len(message)
+            private_message = f"Private message, length={message_len} to {recipient_list}:\r\n{message}"
+            try:
+                self.client_socket.send(private_message.encode('utf-8'))
+                self.log(f"Sent private message to {recipient_list}: {message}")
+                private_window.destroy()
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to send private message: {e}")
+                private_window.destroy()
+
+        Button(private_window, text="Send", command=send_private).pack(pady=5)
 
     def log(self, message):
         if self.chat_area:
             self.chat_area.config(state='normal')
-            # Display leave messages in red
+            # Display leave messages in red, private messages in blue
             if "left the chat room." in message:
                 self.chat_area.insert(tk.END, message + '\n', "red")
+            elif re.match(r'^<.*, Private>: .*', message):
+                self.chat_area.insert(tk.END, message + '\n', "blue")
             else:
                 self.chat_area.insert(tk.END, message + '\n')
             self.chat_area.config(state='disabled')
@@ -73,17 +109,15 @@ class ClientGUI:
 
         try:
             self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.client_socket.settimeout(20)  # Increased timeout
+            self.client_socket.settimeout(20)
             print("Attempting to connect to server")  # Debug log
             self.client_socket.connect((HOST, PORT))
             print("Connected to server")  # Debug log
 
-            # Send greeting message
             greeting = f"Hello {self.name}"
             print(f"Sending: {greeting}")  # Debug log
             self.client_socket.send(greeting.encode('utf-8'))
 
-            # Receive welcome message
             welcome_message = self.client_socket.recv(1024).decode('utf-8')
             print(f"Received welcome: {welcome_message}")  # Debug log
             if welcome_message.startswith("ERROR:"):
@@ -92,7 +126,6 @@ class ClientGUI:
                 self.client_socket = None
                 return
 
-            # Receive confirmation
             confirmation = self.client_socket.recv(1024).decode('utf-8')
             print(f"Received confirmation: {confirmation}")  # Debug log
             if confirmation != "OK":
@@ -105,11 +138,10 @@ class ClientGUI:
             self.name_window.destroy()
             print("Creating chat window")  # Debug log
             self.create_chat_window()
-            self.log(welcome_message)  # Display welcome message
+            self.log(welcome_message)
             self.running = True
             self.send_button.config(state='normal')
 
-            # Start receiving messages
             threading.Thread(target=self.receive_messages, daemon=True).start()
 
         except socket.timeout:
@@ -153,7 +185,6 @@ class ClientGUI:
         self.running = False
         if self.client_socket:
             try:
-                # Send Bye message to server
                 self.client_socket.send("Bye.".encode('utf-8'))
                 print("Sent: Bye.")  # Debug log
                 self.client_socket.close()

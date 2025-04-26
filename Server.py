@@ -31,7 +31,6 @@ class ServerGUI:
         msg = None  # Initialize msg to avoid reference issues
         try:
             print(f"New connection from {addr}")  # Debug log
-            # Receive client's greeting message
             client_socket.settimeout(10)  # Timeout for receiving greeting
             greeting = client_socket.recv(1024).decode('utf-8')
             self.log(f"Received: {greeting}")
@@ -42,60 +41,50 @@ class ServerGUI:
                 self.log(f"Sent to {addr}: ERROR: Invalid greeting message")
                 raise ValueError("Invalid greeting message")
 
-            # Extract name from greeting
             name = greeting[6:].strip()
-
-            # Check if name is unique
             if name in used_names:
                 client_socket.send("ERROR: Name already taken".encode('utf-8'))
                 self.log(f"Sent to {addr}: ERROR: Name already taken")
                 raise ValueError(f"Name {name} is already taken")
 
-            # Send welcome message to the client
             welcome_message = f"Hi {name}, welcome to the chat room."
             client_socket.send(welcome_message.encode('utf-8'))
             self.log(f"Sent to {addr}: {welcome_message}")
 
-            # Send confirmation to client
             client_socket.send("OK".encode('utf-8'))
             self.log(f"Sent to {addr}: OK")
 
-            # Add name to used names and clients
             used_names.add(name)
             clients[client_socket] = name
             self.log(f"{name} joined from {addr}")
 
-            # Broadcast join message to all clients except the new client
             join_message = f"{name} joined the chat room."
             self.broadcast(join_message.encode('utf-8'), exclude=client_socket)
             self.log(f"Broadcasted: {join_message}")
 
             client_socket.settimeout(None)  # Remove timeout for chat messages
             while True:
-                # Receive message
                 message = client_socket.recv(1024)
                 if not message:
                     break
                 msg = message.decode('utf-8')
                 self.log(f"{name}: {msg}")
 
-                # Check for Bye message
                 if msg == "Bye.":
                     self.log(f"{name} requested to leave")
                     leave_message = f"{name} left the chat room."
-                    # Broadcast to all clients except the one leaving
                     self.broadcast(leave_message.encode('utf-8'), exclude=client_socket)
                     self.log(f"Broadcasted: {leave_message}")
-                    break  # Exit the loop to close the connection
+                    break
 
-                # Check if the message is a request for the attendees list
                 if msg == "Please send the list of attendees.":
                     attendees = ",".join(clients.values())
                     response = f"Here is the list of attendees:\r\n{attendees}"
                     client_socket.send(response.encode('utf-8'))
                     self.log(f"Sent to {addr}: {response}")
+                elif msg.startswith("Private message, length="):
+                    self.handle_private_message(client_socket, name, msg)
                 else:
-                    # Broadcast regular chat messages
                     broadcast_msg = f"{name}: {msg}"
                     self.broadcast(broadcast_msg.encode('utf-8'))
 
@@ -105,7 +94,6 @@ class ServerGUI:
         finally:
             if client_socket in clients:
                 name = clients[client_socket]
-                # Broadcast leave message only if not already sent via Bye.
                 if msg != "Bye.":
                     leave_message = f"{name} left the chat room."
                     self.broadcast(leave_message.encode('utf-8'), exclude=client_socket)
@@ -113,6 +101,77 @@ class ServerGUI:
                 used_names.remove(name)
                 del clients[client_socket]
             client_socket.close()
+
+    def handle_private_message(self, sender_socket, sender_name, message):
+        try:
+            # Parse the private message
+            # Expected format: Private message, length=<message_len> to <user_name1>,<user_name2>,...:\r\n<message_body>
+            header, body = message.split(":\r\n", 1)
+            header_parts = header.split(" to ")
+            if len(header_parts) != 2:
+                sender_socket.send("ERROR: Invalid private message format".encode('utf-8'))
+                self.log(f"Sent to {sender_name}: ERROR: Invalid private message format")
+                return
+
+            # Extract length
+            length_part = header_parts[0].split("length=")[1].strip()
+            try:
+                message_len = int(length_part)
+            except ValueError:
+                sender_socket.send("ERROR: Invalid message length".encode('utf-8'))
+                self.log(f"Sent to {sender_name}: ERROR: Invalid message length")
+                return
+
+            # Validate message length
+            if len(body) != message_len:
+                sender_socket.send("ERROR: Message length mismatch".encode('utf-8'))
+                self.log(f"Sent to {sender_name}: ERROR: Message length mismatch")
+                return
+
+            # Extract recipient names
+            recipients = [name.strip() for name in header_parts[1].split(",") if name.strip()]
+            if not recipients:
+                sender_socket.send("ERROR: No recipients specified".encode('utf-8'))
+                self.log(f"Sent to {sender_name}: ERROR: No recipients specified")
+                return
+
+            # Validate recipients
+            invalid_recipients = [r for r in recipients if r not in used_names]
+            if invalid_recipients:
+                sender_socket.send(f"ERROR: Invalid recipients: {','.join(invalid_recipients)}".encode('utf-8'))
+                self.log(f"Sent to {sender_name}: ERROR: Invalid recipients: {','.join(invalid_recipients)}")
+                return
+
+            # Construct the simplified private message for recipients
+            private_message = f"<{sender_name}, Private>: {body}"
+
+            # Send to each recipient
+            sent = False
+            for client, name in list(clients.items()):
+                if name in recipients:
+                    try:
+                        client.send(private_message.encode('utf-8'))
+                        sent = True
+                    except Exception as e:
+                        self.log(f"Failed to send private message to {name}: {e}")
+                        client.close()
+                        if client in clients:
+                            used_names.remove(name)
+                            del clients[client]
+
+            # Log the full message details and send confirmation to sender
+            recipient_list = ",".join(recipients)
+            full_message = f"Private message, length={message_len} from {sender_name} to {recipient_list}:\r\n{body}"
+            if sent:
+                self.log(f"Processed: {full_message}")
+                sender_socket.send(f"Private message sent to {recipient_list}".encode('utf-8'))
+            else:
+                sender_socket.send("ERROR: Failed to send private message".encode('utf-8'))
+                self.log(f"Failed to send private message from {sender_name}")
+
+        except Exception as e:
+            sender_socket.send(f"ERROR: Failed to process private message: {e}".encode('utf-8'))
+            self.log(f"Error processing private message from {sender_name}: {e}")
 
     def broadcast(self, message, exclude=None):
         for client in list(clients):
