@@ -28,6 +28,7 @@ class ServerGUI:
         self.log_area.yview(tk.END)
 
     def handle_client(self, client_socket, addr):
+        msg = None  # Initialize msg to avoid reference issues
         try:
             print(f"New connection from {addr}")  # Debug log
             # Receive client's greeting message
@@ -78,11 +79,19 @@ class ServerGUI:
                 msg = message.decode('utf-8')
                 self.log(f"{name}: {msg}")
 
+                # Check for Bye message
+                if msg == "Bye.":
+                    self.log(f"{name} requested to leave")
+                    leave_message = f"{name} left the chat room."
+                    # Broadcast to all clients except the one leaving
+                    self.broadcast(leave_message.encode('utf-8'), exclude=client_socket)
+                    self.log(f"Broadcasted: {leave_message}")
+                    break  # Exit the loop to close the connection
+
                 # Check if the message is a request for the attendees list
                 if msg == "Please send the list of attendees.":
-                    # Prepare the list of attendees
                     attendees = ",".join(clients.values())
-                    response = f"Here is the list of attendees: {attendees}"
+                    response = f"Here is the list of attendees:\r\n{attendees}"
                     client_socket.send(response.encode('utf-8'))
                     self.log(f"Sent to {addr}: {response}")
                 else:
@@ -96,8 +105,11 @@ class ServerGUI:
         finally:
             if client_socket in clients:
                 name = clients[client_socket]
-                self.log(f"{name} left the chat")
-                self.broadcast(f"{name} left the chat!".encode('utf-8'))
+                # Broadcast leave message only if not already sent via Bye.
+                if msg != "Bye.":
+                    leave_message = f"{name} left the chat room."
+                    self.broadcast(leave_message.encode('utf-8'), exclude=client_socket)
+                    self.log(f"Broadcasted: {leave_message}")
                 used_names.remove(name)
                 del clients[client_socket]
             client_socket.close()

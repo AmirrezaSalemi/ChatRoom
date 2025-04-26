@@ -43,18 +43,22 @@ class ClientGUI:
         self.chat_area.pack(padx=10, pady=10)
         # Configure tag for red text
         self.chat_area.tag_configure("red", foreground="red")
+
         self.message_entry = tk.Entry(self.root, width=40)
         self.message_entry.pack(side=tk.LEFT, padx=5, pady=5)
         self.send_button = tk.Button(self.root, text="Send", command=self.send_message)
         self.send_button.pack(side=tk.LEFT, pady=5)
+        # Add Exit button
+        self.exit_button = tk.Button(self.root, text="Exit", command=self.on_closing)
+        self.exit_button.pack(side=tk.LEFT, padx=5, pady=5)
 
         self.message_entry.bind("<Return>", lambda event: self.send_message())
 
     def log(self, message):
         if self.chat_area:
             self.chat_area.config(state='normal')
-            # Check if the message is a leave message
-            if "left the chat!" in message:
+            # Display leave messages in red
+            if "left the chat room." in message:
                 self.chat_area.insert(tk.END, message + '\n', "red")
             else:
                 self.chat_area.insert(tk.END, message + '\n')
@@ -149,9 +153,14 @@ class ClientGUI:
         self.running = False
         if self.client_socket:
             try:
+                # Send Bye message to server
+                self.client_socket.send("Bye.".encode('utf-8'))
+                print("Sent: Bye.")  # Debug log
                 self.client_socket.close()
-            except:
-                pass
+            except Exception as e:
+                print(f"Error closing connection: {e}")  # Debug log
+            finally:
+                self.client_socket = None
         self.log("Disconnected from server")
         if self.send_button:
             self.send_button.config(state='disabled')
