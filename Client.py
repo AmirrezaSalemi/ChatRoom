@@ -43,7 +43,8 @@ class ClientGUI:
         self.chat_area = scrolledtext.ScrolledText(self.root, width=50, height=20, state='disabled')
         self.chat_area.pack(padx=10, pady=10)
         self.chat_area.tag_configure("red", foreground="red")
-        self.chat_area.tag_configure("blue", foreground="blue")
+        self.chat_area.tag_configure("gray", foreground="gray")  # New tag for gray text
+        self.chat_area.tag_configure("green", foreground="green")
 
         self.message_entry = tk.Entry(self.root, width=40)
         self.message_entry.pack(side=tk.LEFT, padx=5, pady=5)
@@ -91,11 +92,22 @@ class ClientGUI:
     def log(self, message):
         if self.chat_area:
             self.chat_area.config(state='normal')
-            # Display leave messages in red, private messages in blue
+            # Display leave messages in red, private messages in gray, join/welcome messages in green
             if "left the chat room." in message:
                 self.chat_area.insert(tk.END, message + '\n', "red")
             elif re.match(r'^<.*, Private>: .*', message):
-                self.chat_area.insert(tk.END, message + '\n', "blue")
+                self.chat_area.insert(tk.END, message + '\n', "gray")
+            elif "joined the chat room." in message or "welcome to the chat room." in message:
+                self.chat_area.insert(tk.END, message + '\n', "green")
+            elif re.match(r'^Public message from .*, length=\d+:\r\n.*', message):
+                try:
+                    # Extract username and message body
+                    header, body = message.split(":\r\n", 1)
+                    username = header.split("from ")[1].split(",")[0].strip()
+                    formatted_message = f"{username}: {body}"
+                    self.chat_area.insert(tk.END, formatted_message + '\n')
+                except:
+                    self.chat_area.insert(tk.END, message + '\n')
             else:
                 self.chat_area.insert(tk.END, message + '\n')
             self.chat_area.config(state='disabled')
@@ -123,6 +135,8 @@ class ClientGUI:
             if welcome_message.startswith("ERROR:"):
                 messagebox.showerror("Error", welcome_message[6:].strip())
                 self.client_socket.close()
+
+
                 self.client_socket = None
                 return
 
@@ -176,9 +190,13 @@ class ClientGUI:
         message = self.message_entry.get().strip()
         if message:
             try:
-                self.client_socket.send(message.encode('utf-8'))
+                # Format public message as: Public message, length=<message_len>:\r\n<message_body>
+                message_len = len(message)
+                formatted_message = f"Public message, length={message_len}:\r\n{message}"
+                self.client_socket.send(formatted_message.encode('utf-8'))
                 self.message_entry.delete(0, tk.END)
-            except:
+            except Exception as e:
+                print(f"Error sending message: {e}")  # Debug log
                 self.close_connection()
 
     def close_connection(self):

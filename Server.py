@@ -76,14 +76,15 @@ class ServerGUI:
                     self.broadcast(leave_message.encode('utf-8'), exclude=client_socket)
                     self.log(f"Broadcasted: {leave_message}")
                     break
-
-                if msg == "Please send the list of attendees.":
+                elif msg == "Please send the list of attendees.":
                     attendees = ",".join(clients.values())
                     response = f"Here is the list of attendees:\r\n{attendees}"
                     client_socket.send(response.encode('utf-8'))
                     self.log(f"Sent to {addr}: {response}")
                 elif msg.startswith("Private message, length="):
                     self.handle_private_message(client_socket, name, msg)
+                elif msg.startswith("Public message, length="):
+                    self.handle_public_message(client_socket, name, msg)
                 else:
                     broadcast_msg = f"{name}: {msg}"
                     self.broadcast(broadcast_msg.encode('utf-8'))
@@ -172,6 +173,36 @@ class ServerGUI:
         except Exception as e:
             sender_socket.send(f"ERROR: Failed to process private message: {e}".encode('utf-8'))
             self.log(f"Error processing private message from {sender_name}: {e}")
+
+    def handle_public_message(self, sender_socket, sender_name, message):
+        try:
+            # Parse the public message
+            # Expected format: Public message, length=<message_len>:\r\n<message_body>
+            header, body = message.split(":\r\n", 1)
+            length_part = header.split("length=")[1].strip()
+
+            # Extract and validate message length
+            try:
+                message_len = int(length_part)
+            except ValueError:
+                sender_socket.send("ERROR: Invalid message length".encode('utf-8'))
+                self.log(f"Sent to {sender_name}: ERROR: Invalid message length")
+                return
+
+            # Validate message length
+            if len(body) != message_len:
+                sender_socket.send("ERROR: Message length mismatch".encode('utf-8'))
+                self.log(f"Sent to {sender_name}: ERROR: Message length mismatch")
+                return
+
+            # Construct the response message
+            response_message = f"Public message from {sender_name}, length={message_len}:\r\n{body}"
+            self.broadcast(response_message.encode('utf-8'))  # Broadcast to all clients, including sender
+            self.log(f"Broadcasted: {response_message}")
+
+        except Exception as e:
+            sender_socket.send(f"ERROR: Failed to process public message: {e}".encode('utf-8'))
+            self.log(f"Error processing public message from {sender_name}: {e}")
 
     def broadcast(self, message, exclude=None):
         for client in list(clients):
