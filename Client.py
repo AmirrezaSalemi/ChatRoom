@@ -7,6 +7,7 @@ import re
 HOST = '127.0.0.1'
 PORT = 15000
 
+
 class ClientGUI:
     def __init__(self, root):
         self.root = root
@@ -230,6 +231,7 @@ class ClientGUI:
     def on_closing(self):
         self.close_connection()
         self.root.destroy()
+
 
 if __name__ == "__main__":
     root = tk.Tk()
