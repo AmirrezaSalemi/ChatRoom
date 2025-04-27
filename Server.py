@@ -12,7 +12,7 @@ used_names = set()  # Set to store used names for uniqueness check
 class ServerGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Chat Server")
+        self.root.title("Server")
 
         # GUI components
         self.log_area = scrolledtext.ScrolledText(root, width=50, height=20, state='disabled')
