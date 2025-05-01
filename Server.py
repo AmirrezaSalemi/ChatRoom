@@ -5,20 +5,16 @@ from tkinter import scrolledtext
 
 HOST = '127.0.0.1'
 PORT = 15000
-clients = {}  # Dictionary to store client sockets and their names
-used_names = set()  # Set to store used names for uniqueness check
+clients = {}
+used_names = set()
 
 
 class ServerGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Server")
-
-        # GUI components
         self.log_area = scrolledtext.ScrolledText(root, width=50, height=20, state='disabled')
         self.log_area.pack(padx=10, pady=10)
-
-        # Start server
         self.start_server()
 
     def log(self, message):
@@ -28,13 +24,13 @@ class ServerGUI:
         self.log_area.yview(tk.END)
 
     def handle_client(self, client_socket, addr):
-        msg = None  # Initialize msg to avoid reference issues
+        msg = None
         try:
-            print(f"New connection from {addr}")  # Debug log
-            client_socket.settimeout(10)  # Timeout for receiving greeting
+            print(f"New connection from {addr}")
+            client_socket.settimeout(20)
             greeting = client_socket.recv(1024).decode('utf-8')
             self.log(f"Received: {greeting}")
-            print(f"Received from {addr}: {greeting}")  # Debug log
+            print(f"Received from {addr}: {greeting}")
 
             if not greeting.startswith("Hello "):
                 client_socket.send("ERROR: Invalid greeting message".encode('utf-8'))
@@ -51,9 +47,6 @@ class ServerGUI:
             client_socket.send(welcome_message.encode('utf-8'))
             self.log(f"Sent to {addr}: {welcome_message}")
 
-            client_socket.send("OK".encode('utf-8'))
-            self.log(f"Sent to {addr}: OK")
-
             used_names.add(name)
             clients[client_socket] = name
             self.log(f"{name} joined from {addr}")
@@ -62,7 +55,7 @@ class ServerGUI:
             self.broadcast(join_message.encode('utf-8'), exclude=client_socket)
             self.log(f"Broadcasted: {join_message}")
 
-            client_socket.settimeout(None)  # Remove timeout for chat messages
+            client_socket.settimeout(None)
             while True:
                 message = client_socket.recv(1024)
                 if not message:
@@ -91,7 +84,7 @@ class ServerGUI:
 
         except Exception as e:
             self.log(f"Error handling client {addr}: {e}")
-            print(f"Error with {addr}: {e}")  # Debug log
+            print(f"Error with {addr}: {e}")
         finally:
             if client_socket in clients:
                 name = clients[client_socket]
@@ -105,16 +98,12 @@ class ServerGUI:
 
     def handle_private_message(self, sender_socket, sender_name, message):
         try:
-            # Parse the private message
-            # Expected format: Private message, length=<message_len> to <user_name1>,<user_name2>,...:\r\n<message_body>
             header, body = message.split(":\r\n", 1)
             header_parts = header.split(" to ")
             if len(header_parts) != 2:
                 sender_socket.send("ERROR: Invalid private message format".encode('utf-8'))
                 self.log(f"Sent to {sender_name}: ERROR: Invalid private message format")
                 return
-
-            # Extract length
             length_part = header_parts[0].split("length=")[1].strip()
             try:
                 message_len = int(length_part)
@@ -123,30 +112,26 @@ class ServerGUI:
                 self.log(f"Sent to {sender_name}: ERROR: Invalid message length")
                 return
 
-            # Validate message length
             if len(body) != message_len:
                 sender_socket.send("ERROR: Message length mismatch".encode('utf-8'))
                 self.log(f"Sent to {sender_name}: ERROR: Message length mismatch")
                 return
 
-            # Extract recipient names
             recipients = [name.strip() for name in header_parts[1].split(",") if name.strip()]
             if not recipients:
                 sender_socket.send("ERROR: No recipients specified".encode('utf-8'))
                 self.log(f"Sent to {sender_name}: ERROR: No recipients specified")
                 return
 
-            # Validate recipients
             invalid_recipients = [r for r in recipients if r not in used_names]
             if invalid_recipients:
                 sender_socket.send(f"ERROR: Invalid recipients: {','.join(invalid_recipients)}".encode('utf-8'))
                 self.log(f"Sent to {sender_name}: ERROR: Invalid recipients: {','.join(invalid_recipients)}")
                 return
 
-            # Construct the simplified private message for recipients
-            private_message = f"<{sender_name}, Private>: {body}"
+            recipient_list = ",".join(recipients)
+            private_message = f"Private message, length={message_len} from {sender_name} to {recipient_list}:\r\n{body}"
 
-            # Send to each recipient
             sent = False
             for client, name in list(clients.items()):
                 if name in recipients:
@@ -160,8 +145,6 @@ class ServerGUI:
                             used_names.remove(name)
                             del clients[client]
 
-            # Log the full message details and send confirmation to sender
-            recipient_list = ",".join(recipients)
             full_message = f"Private message, length={message_len} from {sender_name} to {recipient_list}:\r\n{body}"
             if sent:
                 self.log(f"Processed: {full_message}")
@@ -176,28 +159,21 @@ class ServerGUI:
 
     def handle_public_message(self, sender_socket, sender_name, message):
         try:
-            # Parse the public message
-            # Expected format: Public message, length=<message_len>:\r\n<message_body>
             header, body = message.split(":\r\n", 1)
             length_part = header.split("length=")[1].strip()
-
-            # Extract and validate message length
             try:
                 message_len = int(length_part)
             except ValueError:
                 sender_socket.send("ERROR: Invalid message length".encode('utf-8'))
                 self.log(f"Sent to {sender_name}: ERROR: Invalid message length")
                 return
-
-            # Validate message length
             if len(body) != message_len:
                 sender_socket.send("ERROR: Message length mismatch".encode('utf-8'))
                 self.log(f"Sent to {sender_name}: ERROR: Message length mismatch")
                 return
 
-            # Construct the response message
             response_message = f"Public message from {sender_name}, length={message_len}:\r\n{body}"
-            self.broadcast(response_message.encode('utf-8'))  # Broadcast to all clients, including sender
+            self.broadcast(response_message.encode('utf-8'))
             self.log(f"Broadcasted: {response_message}")
 
         except Exception as e:
@@ -223,10 +199,10 @@ class ServerGUI:
             self.server.bind((HOST, PORT))
             self.server.listen()
             self.log(f"Server running on {HOST}:{PORT}")
-            print(f"Server started on {HOST}:{PORT}")  # Debug log
+            print(f"Server started on {HOST}:{PORT}")
         except Exception as e:
             self.log(f"Failed to start server: {e}")
-            print(f"Server failed to start: {e}")  # Debug log
+            print(f"Server failed to start: {e}")
             raise
 
         threading.Thread(target=self.accept_clients, daemon=True).start()
@@ -238,7 +214,7 @@ class ServerGUI:
                 threading.Thread(target=self.handle_client, args=(client_socket, addr), daemon=True).start()
             except Exception as e:
                 self.log(f"Error accepting client: {e}")
-                print(f"Error accepting client: {e}")  # Debug log
+                print(f"Error accepting client: {e}")
 
 
 if __name__ == "__main__":

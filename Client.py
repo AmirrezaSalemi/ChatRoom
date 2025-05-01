@@ -4,7 +4,7 @@ import tkinter as tk
 from tkinter import scrolledtext, messagebox, Toplevel, Label, Entry, Button
 import re
 
-HOST = '127.0.0.1'
+HOST = 'localhost'
 PORT = 15000
 
 
@@ -45,7 +45,6 @@ class ClientGUI:
         self.chat_area.tag_configure("red", foreground="red")
         self.chat_area.tag_configure("gray", foreground="gray")
         self.chat_area.tag_configure("green", foreground="green")
-        # New tag for blue text
         self.chat_area.tag_configure("blue", foreground="blue")
 
         self.message_entry = tk.Entry(self.root, width=40)
@@ -56,7 +55,6 @@ class ClientGUI:
         self.exit_button.pack(side=tk.LEFT, padx=5, pady=5)
         self.private_button = tk.Button(self.root, text="Private Msg", command=self.open_private_message_window)
         self.private_button.pack(side=tk.LEFT, padx=5, pady=5)
-        # New button for requesting attendees list
         self.attendees_button = tk.Button(self.root, text="List Users", command=self.request_attendees)
         self.attendees_button.pack(side=tk.LEFT, padx=5, pady=5)
 
@@ -67,7 +65,7 @@ class ClientGUI:
         private_window.title("Send Private Message")
         private_window.geometry("400x200")
 
-        Label(private_window, text="Recipients (comma-separated):").pack(padx=10, pady=5)
+        Label(private_window, text="Recipients (comma separated):").pack(padx=10, pady=5)
         recipients_entry = Entry(private_window, width=40)
         recipients_entry.pack(padx=10, pady=5)
 
@@ -80,10 +78,11 @@ class ClientGUI:
             message = message_entry.get().strip()
             if not recipients or not message:
                 messagebox.showerror("Error", "Please enter recipients and a message")
-                return
+                return None
             recipient_list = ",".join(recipients)
             message_len = len(message)
             private_message = f"Private message, length={message_len} to {recipient_list}:\r\n{message}"
+            print(f"Sending private message: {private_message}")
             try:
                 self.client_socket.send(private_message.encode('utf-8'))
                 self.log(f"Sent private message to {recipient_list}: {message}")
@@ -97,16 +96,22 @@ class ClientGUI:
     def log(self, message):
         if self.chat_area:
             self.chat_area.config(state='normal')
-            # Display leave messages in red, private messages in gray, join/welcome messages in green, attendees list in blue
             if "left the chat room." in message:
                 self.chat_area.insert(tk.END, message + '\n', "red")
-            elif re.match(r'^<.*, Private>: .*', message):
-                self.chat_area.insert(tk.END, message + '\n', "gray")
+            elif message.startswith("Private message, length="):
+                try:
+                    header, body = message.split(":\r\n", 1)
+                    header_parts = header.split(" from ")
+                    sender = header_parts[1].split(" to ")[0].strip()
+                    formatted_message = f"<{sender}, Private>: {body}"
+                    self.chat_area.insert(tk.END, formatted_message + '\n', "gray")
+                except:
+                    self.chat_area.insert(tk.END, message + '\n', "gray")
             elif "joined the chat room." in message or "welcome to the chat room." in message:
                 self.chat_area.insert(tk.END, message + '\n', "green")
             elif message.startswith("Here is the list of attendees:"):
                 self.chat_area.insert(tk.END, message + '\n', "blue")
-            elif re.match(r'^Public message from .*, length=\d+:\r\n.*', message):
+            elif message.startswith("Public message from"):
                 try:
                     header, body = message.split(":\r\n", 1)
                     username = header.split("from ")[1].split(",")[0].strip()
@@ -115,7 +120,7 @@ class ClientGUI:
                 except:
                     self.chat_area.insert(tk.END, message + '\n')
             else:
-                self.chat_area.insert(tk.END, message + '\n')
+                self.chat_area.insert(tk.END, message + '\n', 'red')
             self.chat_area.config(state='disabled')
             self.chat_area.yview(tk.END)
 
@@ -128,9 +133,9 @@ class ClientGUI:
         try:
             self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.client_socket.settimeout(20)
-            print("Attempting to connect to server")
+            print("Connecting to server...")
             self.client_socket.connect((HOST, PORT))
-            print("Connected to server")
+            print("Connected to server.")
 
             greeting = f"Hello {self.name}"
             print(f"Sending: {greeting}")
@@ -144,18 +149,11 @@ class ClientGUI:
                 self.client_socket = None
                 return
 
-            confirmation = self.client_socket.recv(1024).decode('utf-8')
-            print(f"Received confirmation: {confirmation}")
-            if confirmation != "OK":
-                messagebox.showerror("Error", f"Expected OK, received: {confirmation}")
-                self.client_socket.close()
-                self.client_socket = None
-                return
-
             self.client_socket.settimeout(None)
             self.name_window.destroy()
-            print("Creating chat window")
+            print("Creating chat window...")
             self.create_chat_window()
+            print('Chat window created.')
             self.log(welcome_message)
             self.running = True
             self.send_button.config(state='normal')
@@ -164,7 +162,7 @@ class ClientGUI:
 
         except socket.timeout:
             messagebox.showerror("Error", "Connection timed out")
-            print("Timeout occurred during connection")
+            print("Timeout occurred during connection!")
             if self.client_socket:
                 self.client_socket.close()
                 self.client_socket = None
@@ -202,7 +200,6 @@ class ClientGUI:
                 print(f"Error sending message: {e}")
                 self.close_connection()
 
-    # New method to request attendees list
     def request_attendees(self):
         if not self.running:
             return
